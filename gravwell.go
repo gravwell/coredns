@@ -10,8 +10,11 @@ package gravwellcoredns
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -35,32 +38,52 @@ func init() {
 	})
 }
 
+// Callback functionto encode DNS Request/Response
 type encodeFunc func(entry.Timestamp, net.Addr, net.Addr, dns.RR) ([]byte, error)
 
-func setup(c *caddy.Controller) error {
-	conf := ingest.UniformMuxerConfig{
+func parseConfig(c *caddy.Controller) (conf ingest.UniformMuxerConfig, tag string, enc encodeFunc, err error) {
+	conf = ingest.UniformMuxerConfig{
 		LogLevel:     `INFO`,
 		IngesterName: `coredns`,
 		VerifyCert:   true,
 	}
-	var tag string
-	var enc encodeFunc
 	for c.Next() {
-		//fmt.Println("Gravwell", args)
 		for c.NextBlock() {
 			directives := strings.SplitN(c.Val(), "=", 2)
 			if len(directives) != 2 {
-				return fmt.Errorf("Invalid directive line (%s): %v", c.Val(), directives)
+				err = fmt.Errorf("Invalid directive line (%s): %v", c.Val(), directives)
+				return
 			}
 			arg := strings.ToLower(strings.TrimSpace(directives[0]))
 			val := strings.TrimSpace(directives[1])
-			fmt.Println(arg, val)
 			switch arg {
+			case `log-level`:
+				if err = testLogLevel(val); err != nil {
+					return
+				}
+				conf.LogLevel = val
+			case `ingest-cache-path`:
+				conf.EnableCache = true
+				conf.CacheConfig = ingest.IngestCacheConfig{
+					FileBackingLocation: filepath.Clean(val),
+				}
+			case `max-cache-size-mb`:
+				var v int
+				if v, err = strconv.Atoi(val); err != nil || v < 0 {
+					err = fmt.Errorf("Invalid max cache size: %v", err)
+				}
+				conf.CacheConfig.MaxCacheSize = uint64(v) * (1024 * 1024)
 			case `ingest-secret`:
 				conf.Auth = val
 			case `cleartext-target`:
+				if _, _, err = net.SplitHostPort(val); err != nil {
+					return
+				}
 				conf.Destinations = append(conf.Destinations, `tcp://`+val)
 			case `ciphertext-target`:
+				if _, _, err = net.SplitHostPort(val); err != nil {
+					return
+				}
 				conf.Destinations = append(conf.Destinations, `tls://`+val)
 			case `insecure-novalidate-tls`:
 				if val == `true` {
@@ -68,36 +91,56 @@ func setup(c *caddy.Controller) error {
 				} else if val == `false` {
 					//do nothing
 				} else {
-					return fmt.Errorf("Unknown gravwell insecure-novalidate-tls argument %s", val)
+					err = fmt.Errorf("Unknown gravwell insecure-novalidate-tls argument %s", val)
+					return
 				}
 			case `tag`:
 				conf.Tags = append(conf.Tags, val)
 				tag = val
 			case `encoding`:
-				var err error
 				if enc, err = getEncoder(val); err != nil {
-					return err
+					return
 				}
 			default:
-				return fmt.Errorf("Unknown gravwell configuration directive %s", arg)
+				err = fmt.Errorf("Unknown gravwell configuration directive %s", arg)
+				return
 			}
 		}
 	}
+	if conf.CacheConfig.MaxCacheSize > 0 && !conf.EnableCache {
+		err = fmt.Errorf("Max-Cache-Size-MB may not be set without an active cache location")
+	}
 	if len(conf.Tags) != 1 || tag == `` {
-		return fmt.Errorf("Tag not appropriately defined.  Exactly one tag must be specified")
+		err = fmt.Errorf("Tag not appropriately defined.  Exactly one tag must be specified")
 	}
 	if len(conf.Destinations) == 0 {
-		return fmt.Errorf("Invalid destination count, > 0 destinations must be specified")
+		err = fmt.Errorf("Invalid destination count, > 0 destinations must be specified")
+	}
+	if len(conf.Auth) == 0 {
+		err = fmt.Errorf("Invalid Ingest-Auth.  An auth token is required")
+	}
+	if enc == nil {
+		//default to the JSON encoder
+		enc = jsonEncoder
+	}
+	return
+}
+
+// setup the plugin
+func setup(c *caddy.Controller) error {
+	conf, tag, enc, err := parseConfig(c)
+	if err != nil {
+		return err
 	}
 	im, err := ingest.NewUniformMuxer(conf)
 	if err != nil {
 		return err
 	}
-	if err := im.Start(); err != nil {
+	if err = im.Start(); err != nil {
 		return err
 	}
-	if err := im.WaitForHot(time.Second); err != nil {
-		fmt.Println("WaitForHot error", err)
+	if err = im.WaitForHot(time.Second); err != nil {
+		return err
 	}
 	tg, err := im.GetTag(tag)
 	if err != nil {
@@ -144,11 +187,9 @@ func (gh gwHandler) ServeDNS(ctx context.Context, rw dns.ResponseWriter, r *dns.
 			local := rw.LocalAddr()
 			remote := rw.RemoteAddr()
 			for _, a := range is.a {
-				if bb, lerr = gh.enc(ts, local, remote, a); lerr != nil {
-					fmt.Println("Failed to encode dns answer", a, lerr)
+				if bb, err = gh.enc(ts, local, remote, a); err != nil {
 					return
 				} else if err = gh.im.Write(ts, gh.tag, bb); lerr != nil {
-					fmt.Println("Failed to write entry to gravwell", lerr)
 					return
 				}
 			}
@@ -156,13 +197,25 @@ func (gh gwHandler) ServeDNS(ctx context.Context, rw dns.ResponseWriter, r *dns.
 			if bb, lerr = r.Pack(); lerr != nil {
 				bb = []byte(fmt.Sprintf("Failed to pack DNS response: %v", err))
 			}
-			if lerr = gh.im.Write(ts, gh.tag, bb); lerr != nil {
-				fmt.Println("Failed to write entry to gravwell", lerr)
+			if err = gh.im.Write(ts, gh.tag, bb); err != nil {
 				return
 			}
 		}
 	}
 	return
+}
+
+func testLogLevel(v string) error {
+	v = strings.TrimSpace(strings.ToLower(v))
+	switch v {
+	case `error`:
+	case `warn`:
+	case `info`:
+	case `off`:
+	default:
+		return errors.New("Invalid log level")
+	}
+	return nil
 }
 
 type introspector struct {
@@ -188,8 +241,9 @@ type dnsAnswer struct {
 func getEncoder(t string) (encodeFunc, error) {
 	t = strings.ToLower(t)
 	switch t {
-	case `native`:
-		return nil, nil
+	//TODO implement native encoder with sensible request/response formats
+	//case `native`:
+	//	return nil, nil
 	case `json`:
 		return jsonEncoder, nil
 	case `text`:
