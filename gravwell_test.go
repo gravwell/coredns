@@ -25,6 +25,12 @@ const (
 	Log-Level=ERROR
 	}`
 
+	goodConfig2 = `gravwell {
+	Ingest-Secret=testing
+	Cleartext-Target=[dead::beef]:4024
+	Tag=dns
+	}`
+
 	badTagConfig = `gravwell {
 	Ingest-Secret=testing
 	Cleartext-Target=192.168.1.3:4024
@@ -118,6 +124,13 @@ func TestSetupGravwell(t *testing.T) {
 
 	//test good config
 	c = caddy.NewTestController("dns", goodConfig)
+	if _, tag, _, err := parseConfig(c); err != nil {
+		t.Fatal(err)
+	} else if tag != `dns` {
+		t.Fatal("invalid tag for parse")
+	}
+
+	c = caddy.NewTestController("dns", goodConfig2)
 	if _, tag, _, err := parseConfig(c); err != nil {
 		t.Fatal(err)
 	} else if tag != `dns` {
