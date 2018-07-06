@@ -16,103 +16,123 @@ import (
 
 const (
 	goodConfig = `gravwell {
-	Ingest-Secret=testing
-	Cleartext-Target=192.168.1.1:4024
-	Cleartext-Target=192.168.1.2:4024
-	Cleartext-Target=192.168.1.3:4024
-	Tag=dns
-	Encoding=json
-	Log-Level=ERROR
+	Ingest-Secret testing
+	Cleartext-Target    192.168.1.1:4024
+	Cleartext-Target   192.168.1.2:4024
+	Cleartext-Target		192.168.1.3:4024
+	Tag dns
+	Encoding json
+	Log-Level ERROR
 	}`
 
 	goodConfig2 = `gravwell {
-	Ingest-Secret=testing
-	Cleartext-Target=[dead::beef]:4024
-	Tag=dns
+	Ingest-Secret testing
+	Cleartext-Target [dead::beef]:4024
+	Tag dns #comment about tag	and a space
+	#some comments
 	}`
 
 	badTagConfig = `gravwell {
-	Ingest-Secret=testing
-	Cleartext-Target=192.168.1.3:4024
-	Encoding=json
-	Log-Level=ERROR
+	Ingest-Secret testing
+	Cleartext-Target 192.168.1.3:4024
+	Encoding json
+	Log-Level ERROR
 	}`
 
 	badLogLevelConfig = `gravwell {
-	Ingest-Secret=testing
-	Cleartext-Target=192.168.1.1:4024
-	Tag=dns
-	Encoding=json
-	Log-Level=NOTAGOODLOGLEVEL
+	Ingest-Secret testing
+	Cleartext-Target 192.168.1.1:4024
+	Tag dns
+	Encoding json
+	Log-Level NOTAGOODLOGLEVEL
 	}`
 
 	missingEncoderConfig = `gravwell {
-	Ingest-Secret=testing
-	Cleartext-Target=192.168.1.1:4024
-	Tag=dns
-	Log-Level=ERROR
+	Ingest-Secret testing
+	Cleartext-Target 192.168.1.1:4024
+	Tag dns
+	Log-Level ERROR
 	}`
 
 	missingSecretConfig = `gravwell {
-	Cleartext-Target=192.168.1.1:4024
-	Tag=dns
-	Log-Level=ERROR
+	Cleartext-Target 192.168.1.1:4024
+	Tag dns
+	Log-Level ERROR
 	}`
 
 	badTargetConfig = `gravwell {
-	Ingest-Secret=testing
-	Cleartext-Target=192.168.1.1
-	Tag=dns
-	Log-Level=ERROR
+	Ingest-Secret testing
+	Cleartext-Target 192.168.1.1
+	Tag dns
+	Log-Level ERROR
 	}`
 
 	badTarget2Config = `gravwell {
-	Ingest-Secret=testing
-	Cleartext-Target=blahblah
-	Tag=dns
-	Log-Level=ERROR
+	Ingest-Secret testing
+	Cleartext-Target blahblah
+	Tag dns
+	Log-Level ERROR
 	}`
 
 	badTarget3Config = `gravwell {
-	Ingest-Secret=testing
-	Tag=dns
-	Log-Level=ERROR
+	Ingest-Secret testing
+	Tag dns
+	Log-Level ERROR
 	}`
 
 	goodCacheConfig = `gravwell {
-	Ingest-Secret=testing
-	Cleartext-Target=192.168.1.1:4024
-	Tag=dns
-	Log-Level=ERROR
-	ingest-cache-path=/tmp/dns.cache
+	Ingest-Secret testing
+	Cleartext-Target 192.168.1.1:4024
+	Tag dns
+	Log-Level ERROR
+	ingest-cache-path /tmp/dns.cache
 	}`
 
 	goodCache2Config = `gravwell {
-	Ingest-Secret=testing
-	Cleartext-Target=192.168.1.1:4024
-	Tag=dns
-	Log-Level=ERROR
-	ingest-cache-path=/tmp/dns.cache
-	max-cache-size-mb=1024
+	Ingest-Secret testing
+	Cleartext-Target 192.168.1.1:4024
+	Tag dns
+	Log-Level ERROR
+	ingest-cache-path /tmp/dns.cache
+	max-cache-size-mb 1024
 	}`
 
 	badCacheConfig = `gravwell {
-	Ingest-Secret=testing
-	Cleartext-Target=192.168.1.1:4024
-	Tag=dns
-	Log-Level=ERROR
-	max-cache-size-mb=1024
+	Ingest-Secret testing
+	Cleartext-Target 192.168.1.1:4024
+	Tag dns
+	Log-Level ERROR
+	max-cache-size-mb 1024
 	}`
 
 	badCache2Config = `gravwell {
-	Ingest-Secret=testing
-	Cleartext-Target=192.168.1.1:4024
-	Tag=dns
-	Log-Level=ERROR
-	ingest-cache-path=/tmp/dns.cache
-	max-cache-size-mb=-1
+	Ingest-Secret testing
+	Cleartext-Target 192.168.1.1:4024
+	Tag dns
+	Log-Level ERROR
+	ingest-cache-path /tmp/dns.cache
+	max-cache-size-mb -1
 	}`
 )
+
+func TestPlay(t *testing.T) {
+	c := caddy.NewTestController("dns", `gravwell {
+		A B
+		Stuff "things foo bar"
+		"this is a test" "for more tests"
+	}`)
+	for c.Next() {
+		for c.NextBlock() {
+			name, value, err := getArgLine(c)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(name) == 0 || len(value) == 0 {
+				t.Fatal("empty name and value")
+			}
+		}
+	}
+}
 
 func TestSetupGravwell(t *testing.T) {
 

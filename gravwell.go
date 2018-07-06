@@ -49,13 +49,10 @@ func parseConfig(c *caddy.Controller) (conf ingest.UniformMuxerConfig, tag strin
 	}
 	for c.Next() {
 		for c.NextBlock() {
-			directives := strings.SplitN(c.Val(), "=", 2)
-			if len(directives) != 2 {
-				err = fmt.Errorf("Invalid directive line (%s): %v", c.Val(), directives)
+			var arg, val string
+			if arg, val, err = getArgLine(c); err != nil {
 				return
 			}
-			arg := strings.ToLower(strings.TrimSpace(directives[0]))
-			val := strings.TrimSpace(directives[1])
 			switch arg {
 			case `log-level`:
 				if err = testLogLevel(val); err != nil {
@@ -269,6 +266,18 @@ func jsonEncoder(ts entry.Timestamp, local, remote net.Addr, rr dns.RR) (bb []by
 	if bb, err = json.Marshal(dnsa); err != nil {
 		bb = []byte(fmt.Sprintf("%s ERROR JSON marshal: %v", ts, err))
 		err = nil
+	}
+	return
+}
+
+func getArgLine(c *caddy.Controller) (name, value string, err error) {
+	name = strings.ToLower(c.Val())
+	if !c.NextArg() {
+		err = fmt.Errorf("Missing argument to %s", name)
+	}
+	value = c.Val()
+	if c.NextArg() {
+		err = fmt.Errorf("%s only takes one argument", name)
 	}
 	return
 }

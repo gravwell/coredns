@@ -22,16 +22,16 @@ Configure your Corefile with an indexer target and your Ingest-Secret
   cache 240
   whoami
   gravwell {
-   Ingest-Secret=IngestSecretToken
-   Cleartext-Target=192.168.1.1:4023
-   Tag=dns
-   Encoding=json
-   Log-Level=INFO
-   #Cleartext-Target=192.168.1.2:4023 #second indexer
-   #Ciphertext-Target=192.168.1.1:4024
-   #Insecure-Novalidate-TLS=true #disable TLS certificate validation
-   #Ingest-Cache-Path=/tmp/coredns_ingest.cache #enable the local ingest cache
-   #Max-Cache-Size-MB=1024
+   Ingest-Secret IngestSecretToken
+   Cleartext-Target 192.168.1.1:4023
+   Tag dns
+   Encoding json
+   Log-Level INFO
+   #Cleartext-Target 192.168.1.2:4023 #second indexer
+   #Ciphertext-Target 192.168.1.1:4024
+   #Insecure-Novalidate-TLS true #disable TLS certificate validation
+   #Ingest-Cache-Path /tmp/coredns_ingest.cache #enable the local ingest cache
+   #Max-Cache-Size-MB 1024
   }
 }
 ```
