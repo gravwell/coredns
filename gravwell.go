@@ -238,9 +238,8 @@ type dnsAnswer struct {
 func getEncoder(t string) (encodeFunc, error) {
 	t = strings.ToLower(t)
 	switch t {
-	//TODO implement native encoder with sensible request/response formats
-	//case `native`:
-	//	return nil, nil
+	case `native`:
+		return nil, nil //our response writer will use the binary packing if there is no encoder, so a nil is ok
 	case `json`:
 		return jsonEncoder, nil
 	case `text`:
