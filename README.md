@@ -4,7 +4,20 @@ The Gravwell CoreDNS plugin allows for directly integrating DNS auditing into Gr
 
 DNS Requests and responses can be encoded as text, JSON, or as a packed binary format.
 
-## Getting started
+## Building CoreDNS with the Gravwell plugin
+
+```
+go get github.com/coredns/coredns
+pushd $GOPATH/src/github.com/coredns/coredns/
+sed -i 's/metadata:metadata/metadata:metadata\ngravwell:github.com\/gravwell\/coredns/g' plugin.cfg
+go generate
+CGO_ENABLED=0 go build -o /tmp/coredns
+popd
+```
+
+The statically CoreDNS server with the Gravwell plugin will be located at /tmp/coredns
+
+## Getting started with gravwell
 
 Install Gravwell community edition https://dev.gravwell.io/docs/#!quickstart/community-edition.md
 
