@@ -185,14 +185,15 @@ func (gh gwHandler) ServeDNS(ctx context.Context, rw dns.ResponseWriter, r *dns.
 			remote := rw.RemoteAddr()
 			for _, a := range is.a {
 				if bb, err = gh.enc(ts, local, remote, a); err != nil {
-					return
-				} else if err = gh.im.Write(ts, gh.tag, bb); lerr != nil {
+					bb = []byte(fmt.Sprintf("ERROR: Failed to encode DNS request: %v", err))
+				}
+				if err = gh.im.Write(ts, gh.tag, bb); lerr != nil {
 					return
 				}
 			}
 		} else {
-			if bb, lerr = r.Pack(); lerr != nil {
-				bb = []byte(fmt.Sprintf("Failed to pack DNS response: %v", err))
+			if bb, err = r.Pack(); err != nil {
+				bb = []byte(fmt.Sprintf("ERROR: Failed to pack DNS response: %v", err))
 			}
 			if err = gh.im.Write(ts, gh.tag, bb); err != nil {
 				return
