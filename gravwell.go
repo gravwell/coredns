@@ -39,9 +39,12 @@ func init() {
 }
 
 // Callback functionto encode DNS Request/Response
-type encodeFunc func(entry.Timestamp, net.Addr, net.Addr, dns.RR) ([]byte, error)
+type encoder interface {
+	Encode(entry.Timestamp, net.Addr, net.Addr, *introspector) [][]byte
+	EncodeError(entry.Timestamp, net.Addr, net.Addr, *dns.Msg, error) [][]byte
+}
 
-func parseConfig(c *caddy.Controller) (conf ingest.UniformMuxerConfig, tag string, enc encodeFunc, err error) {
+func parseConfig(c *caddy.Controller) (conf ingest.UniformMuxerConfig, tag string, enc encoder, err error) {
 	conf = ingest.UniformMuxerConfig{
 		LogLevel:     `INFO`,
 		IngesterName: `coredns`,
@@ -118,7 +121,7 @@ func parseConfig(c *caddy.Controller) (conf ingest.UniformMuxerConfig, tag strin
 	}
 	if enc == nil {
 		//default to the JSON encoder
-		enc = jsonEncoder
+		enc = &jsonEncoder{}
 	}
 	return
 }
@@ -161,7 +164,7 @@ type gwHandler struct {
 	Next plugin.Handler
 	im   *ingest.IngestMuxer
 	tag  entry.EntryTag
-	enc  encodeFunc
+	enc  encoder
 }
 
 func (gh gwHandler) String() string {
@@ -173,33 +176,32 @@ func (gh gwHandler) Name() string {
 }
 
 func (gh gwHandler) ServeDNS(ctx context.Context, rw dns.ResponseWriter, r *dns.Msg) (c int, err error) {
+	var bbs [][]byte
+	var lerr error
+	ts := entry.Now()
+	local := rw.LocalAddr()
+	remote := rw.RemoteAddr()
 	is := &introspector{
 		ResponseWriter: rw,
 	}
-	if c, err = gh.Next.ServeDNS(ctx, is, r); err == nil {
-		ts := entry.Now()
+	c, err = gh.Next.ServeDNS(ctx, is, r)
+	if gh.enc == nil {
 		var bb []byte
-		var lerr error
-		if gh.enc != nil {
-			local := rw.LocalAddr()
-			remote := rw.RemoteAddr()
-			for _, a := range is.a {
-				if bb, err = gh.enc(ts, local, remote, a); err != nil {
-					bb = []byte(fmt.Sprintf("ERROR: Failed to encode DNS request: %v", err))
-				}
-				if err = gh.im.Write(ts, gh.tag, bb); lerr != nil {
-					return
-				}
-			}
-		} else {
-			if bb, err = r.Pack(); err != nil {
-				bb = []byte(fmt.Sprintf("ERROR: Failed to pack DNS response: %v", err))
-			}
-			if err = gh.im.Write(ts, gh.tag, bb); err != nil {
-				return
-			}
+		if bb, lerr = r.Pack(); err != nil {
+			bb = []byte(fmt.Sprintf("ERROR: Failed to pack DNS response: %v", err))
+		}
+		bbs = append(bbs, bb)
+	} else if err != nil {
+		bbs = gh.enc.EncodeError(ts, local, remote, r, err)
+	} else {
+		bbs = gh.enc.Encode(ts, local, remote, is)
+	}
+	for _, bb := range bbs {
+		if lerr = gh.im.Write(ts, gh.tag, bb); lerr != nil {
+			return
 		}
 	}
+
 	return
 }
 
@@ -222,50 +224,134 @@ type introspector struct {
 	a []dns.RR
 }
 
+func (i *introspector) Write(b []byte) (int, error) {
+	return i.ResponseWriter.Write(b)
+}
+
 func (i *introspector) WriteMsg(m *dns.Msg) error {
 	i.q = m.Question
 	i.a = m.Answer
 	return i.ResponseWriter.WriteMsg(m)
 }
 
-type dnsAnswer struct {
-	TS     entry.Timestamp
-	Proto  string
-	Local  string
-	Remote string
-	Answer dns.RR
-}
-
-func getEncoder(t string) (encodeFunc, error) {
-	t = strings.ToLower(t)
+func getEncoder(t string) (encoder, error) {
+	t = strings.TrimSpace(strings.ToLower(t))
 	switch t {
+	case `binary`:
+		fallthrough
 	case `native`:
-		return nil, nil //our response writer will use the binary packing if there is no encoder, so a nil is ok
-	case `json`:
-		return jsonEncoder, nil
+		return nil, nil
 	case `text`:
-		return stringEncoder, nil
+		return &textEncoder{}, nil
+	case `json`:
+		fallthrough
+	case ``:
+		return &jsonEncoder{}, nil
 	}
 	return nil, fmt.Errorf("Unknown encoding type")
 }
 
-func stringEncoder(ts entry.Timestamp, local, remote net.Addr, rr dns.RR) (bb []byte, err error) {
-	bb = []byte(fmt.Sprintf("%s %s %s %s %v", ts.String(), local.Network(),
-		local.String(), remote.String(), rr.String()))
+type textEncoder struct{}
+
+func (t textEncoder) Encode(ts entry.Timestamp, local, remote net.Addr, tr *introspector) (bb [][]byte) {
+	var dt string
+	for i := range tr.q {
+		if i < len(tr.a) {
+			dt = tr.a[i].String()
+		} else {
+			dt = tr.q[i].String()
+		}
+		bb = append(bb, []byte(fmt.Sprintf("%s %s %s %s %v", ts.String(),
+			local.Network(), local.String(), remote.String(), dt)))
+	}
 	return
 }
 
-func jsonEncoder(ts entry.Timestamp, local, remote net.Addr, rr dns.RR) (bb []byte, err error) {
-	dnsa := dnsAnswer{
+func (t textEncoder) EncodeError(ts entry.Timestamp, l, r net.Addr, msg *dns.Msg, err error) (bb [][]byte) {
+	for _, q := range msg.Question {
+		bb = append(bb, []byte(fmt.Sprintf("%s %s %s %s %v", ts.String(),
+			l.Network(), l.String(), r.String(), q.String())))
+	}
+	return
+}
+
+type dnsBase struct {
+	TS     entry.Timestamp
+	Proto  string
+	Local  string
+	Remote string
+}
+
+type dnsAnswer struct {
+	dnsBase
+	Question dns.RR
+}
+
+type dnsQuestion struct {
+	dnsBase
+	Question struct {
+		Hdr dns.Question
+	}
+}
+
+type jsonEncoder struct{}
+
+func (j jsonEncoder) Encode(ts entry.Timestamp, local, remote net.Addr, tr *introspector) (bbs [][]byte) {
+	var bb []byte
+	var err error
+	base := dnsBase{
 		TS:     ts,
 		Proto:  local.Network(),
 		Local:  local.String(),
 		Remote: remote.String(),
-		Answer: rr,
 	}
-	if bb, err = json.Marshal(dnsa); err != nil {
-		bb = []byte(fmt.Sprintf("%s ERROR JSON marshal: %v", ts, err))
-		err = nil
+	for i := range tr.q {
+		if i >= len(tr.a) {
+			dnsq := dnsQuestion{
+				dnsBase: base,
+			}
+			dnsq.Question.Hdr = tr.q[i]
+			bb, err = json.Marshal(dnsq)
+		} else {
+			dnsa := dnsAnswer{
+				dnsBase:  base,
+				Question: tr.a[i],
+			}
+			bb, err = json.Marshal(dnsa)
+		}
+		if err != nil {
+			bb = []byte(fmt.Sprintf("%s ERROR JSON marshal: %v", ts, err))
+		}
+		bbs = append(bbs, bb)
+	}
+	return
+}
+
+type errAnswer struct {
+	TS       entry.Timestamp
+	Proto    string
+	Local    string
+	Remote   string
+	Question dns.Question
+	Error    string
+}
+
+func (j jsonEncoder) EncodeError(ts entry.Timestamp, l, r net.Addr, msg *dns.Msg, err error) (bbs [][]byte) {
+	var bb []byte
+	a := errAnswer{
+		TS:     ts,
+		Proto:  l.Network(),
+		Local:  l.String(),
+		Remote: r.String(),
+		Error:  err.Error(),
+	}
+	var lerr error
+	for _, q := range msg.Question {
+		a.Question = q
+		if bb, lerr = json.Marshal(a); lerr != nil {
+			bb = []byte(fmt.Sprintf("%s ERROR JSON marshal: %v", ts, lerr))
+		}
+		bbs = append(bbs, bb)
 	}
 	return
 }
