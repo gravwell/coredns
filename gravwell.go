@@ -18,11 +18,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/caddyserver/caddy"
 	"github.com/coredns/coredns/core/dnsserver"
 	"github.com/coredns/coredns/plugin"
-	"github.com/gravwell/ingest"
-	"github.com/gravwell/ingest/entry"
-	"github.com/mholt/caddy"
+	"github.com/gravwell/ingest/v3"
+	"github.com/gravwell/ingest/v3/entry"
 	"github.com/miekg/dns"
 	"golang.org/x/net/context"
 )
