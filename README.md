@@ -9,7 +9,7 @@ DNS Requests and responses can be encoded as text, JSON, or as a packed binary f
 ```
 go get github.com/coredns/coredns
 pushd $GOPATH/src/github.com/coredns/coredns/
-echo 'gravwell:github.com\/gravwell\/coredns/v1' >> plugin.cfg
+echo 'gravwell:github.com/gravwell/coredns/v1' >> plugin.cfg
 go generate
 CGO_ENABLED=0 go build -o /tmp/coredns
 popd
