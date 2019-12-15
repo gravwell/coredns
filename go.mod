@@ -1,4 +1,4 @@
-module github.com/gravwell/coredns/v1
+module github.com/gravwell/coredns
 
 go 1.13
 
