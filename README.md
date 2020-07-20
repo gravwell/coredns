@@ -4,6 +4,13 @@ The Gravwell CoreDNS plugin allows for directly integrating DNS auditing into Gr
 
 DNS Requests and responses can be encoded as text, JSON, or as a packed binary format.
 
+## CoreDNS Kit in Gravwell
+
+Gravwell provides a CoreDNS Kit to work with data ingested by CoreDNS out of the box and provides a number of prebuilt queries, dashboards, and investigation tools. 
+
+![Gravwell CoreDNS Kit](https://github.com/gravwell/coredns/blob/master/coredns_kit.png?raw=true)
+
+
 ## Building CoreDNS with the Gravwell plugin
 
 ```
