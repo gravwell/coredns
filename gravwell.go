@@ -63,16 +63,14 @@ func parseConfig(c *caddy.Controller) (conf ingest.UniformMuxerConfig, tag strin
 				}
 				conf.LogLevel = val
 			case `ingest-cache-path`:
-				conf.EnableCache = true
-				conf.CacheConfig = ingest.IngestCacheConfig{
-					FileBackingLocation: filepath.Clean(val),
-				}
+				conf.CacheMode = "always"
+				conf.CachePath = filepath.Clean(val)
 			case `max-cache-size-mb`:
 				var v int
 				if v, err = strconv.Atoi(val); err != nil || v < 0 {
 					err = fmt.Errorf("Invalid max cache size: %v", err)
 				}
-				conf.CacheConfig.MaxCacheSize = uint64(v) * (1024 * 1024)
+				conf.CacheSize = v * 1024 * 1024
 			case `ingest-secret`:
 				conf.Auth = val
 			case `cleartext-target`:
@@ -107,7 +105,8 @@ func parseConfig(c *caddy.Controller) (conf ingest.UniformMuxerConfig, tag strin
 			}
 		}
 	}
-	if conf.CacheConfig.MaxCacheSize > 0 && !conf.EnableCache {
+	conf.CacheDepth = 128
+	if conf.CacheSize > 0 && conf.CachePath == "" {
 		err = fmt.Errorf("Max-Cache-Size-MB may not be set without an active cache location")
 	}
 	if len(conf.Tags) != 1 || tag == `` {
