@@ -16,10 +16,9 @@ Gravwell provides a CoreDNS Kit to work with data ingested by CoreDNS out of the
 ```
 git clone https://github.com/coredns/coredns.git
 pushd coredns
-git checkout v1.6.9
 sed -i 's/metadata:metadata/metadata:metadata\ngravwell:github.com\/gravwell\/coredns/g' plugin.cfg
 go generate
-CGO_ENABLED=0 go build -o /tmp/coredns
+CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /tmp/coredns
 popd
 ```
 
