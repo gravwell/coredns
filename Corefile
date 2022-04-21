@@ -1,0 +1,26 @@
+.:53 {
+  cache 600
+  forward . tls://1.1.1.1 tls://1.0.0.1 {
+    tls_servername cloudflare-dns.com
+    health_check 10s
+    max_fails 1
+    expire 60s
+  }
+  #alternate SERVFAIL,REFUSED . 9.9.9.9 149.112.112.112
+  errors stdout
+  #log . {
+  #     class all
+  #}
+  bind 0.0.0.0
+  gravwell {
+   Ingest-Secret IngestSecrets
+   Cleartext-Target 10.0.0.1:4023
+   Tag dns
+   Encoding json
+   Ingest-Cache-Path coredns.cache
+   Max-Cache-Size-MB 128
+   Enable-Compression true
+   Label CoreDNS
+   Ingester-UUID f775a9c6-c1a9-11ec-bf85-67747390939e
+  }
+}
