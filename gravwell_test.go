@@ -11,7 +11,7 @@ package gravwellcoredns
 import (
 	"testing"
 
-	"github.com/caddyserver/caddy"
+	"github.com/coredns/caddy"
 )
 
 const (
