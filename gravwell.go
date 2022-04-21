@@ -61,7 +61,6 @@ func parseConfig(c *caddy.Controller) (conf cfgType, enc encoder, err error) {
 		Ingester_Name:            `coredns`,
 		Insecure_Skip_TLS_Verify: false,
 	}
-	conf.Tag = defaultTag
 	for c.Next() {
 		for c.NextBlock() {
 			var arg, val string
