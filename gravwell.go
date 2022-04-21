@@ -21,14 +21,18 @@ import (
 	"github.com/coredns/caddy"
 	"github.com/coredns/coredns/core/dnsserver"
 	"github.com/coredns/coredns/plugin"
+	"github.com/google/uuid"
 	"github.com/gravwell/gravwell/v3/ingest"
+	"github.com/gravwell/gravwell/v3/ingest/config"
 	"github.com/gravwell/gravwell/v3/ingest/entry"
+	"github.com/gravwell/gravwell/v3/ingesters/version"
 	"github.com/miekg/dns"
 	"golang.org/x/net/context"
 )
 
 const (
 	coreDNSPackageName string = `gravwell`
+	defaultTag         string = `dns`
 )
 
 func init() {
@@ -38,17 +42,24 @@ func init() {
 	})
 }
 
+type cfgType struct {
+	config.IngestConfig
+	Tag     string
+	Encoder string
+}
+
 // Callback functionto encode DNS Request/Response
 type encoder interface {
 	Encode(entry.Timestamp, net.Addr, net.Addr, *introspector) [][]byte
 	EncodeError(entry.Timestamp, net.Addr, net.Addr, *dns.Msg, error) [][]byte
+	Name() string
 }
 
-func parseConfig(c *caddy.Controller) (conf ingest.UniformMuxerConfig, tag string, enc encoder, err error) {
-	conf = ingest.UniformMuxerConfig{
-		LogLevel:     `INFO`,
-		IngesterName: `coredns`,
-		VerifyCert:   true,
+func parseConfig(c *caddy.Controller) (conf cfgType, tag string, enc encoder, err error) {
+	conf.IngestConfig = config.IngestConfig{
+		Log_Level:                `INFO`,
+		Ingester_Name:            `coredns`,
+		Insecure_Skip_TLS_Verify: false,
 	}
 	for c.Next() {
 		for c.NextBlock() {
@@ -61,42 +72,57 @@ func parseConfig(c *caddy.Controller) (conf ingest.UniformMuxerConfig, tag strin
 				if err = testLogLevel(val); err != nil {
 					return
 				}
-				conf.LogLevel = val
+				conf.Log_Level = val
 			case `ingest-cache-path`:
-				conf.CacheMode = "always"
-				conf.CachePath = filepath.Clean(val)
+				conf.Cache_Mode = "always"
+				conf.Ingest_Cache_Path = filepath.Clean(val)
 			case `max-cache-size-mb`:
 				var v int
 				if v, err = strconv.Atoi(val); err != nil || v < 0 {
 					err = fmt.Errorf("Invalid max cache size: %v", err)
 				}
-				conf.CacheSize = v * 1024 * 1024
+				conf.Max_Ingest_Cache = v * 1024 * 1024
 			case `ingest-secret`:
-				conf.Auth = val
+				conf.Ingest_Secret = val
+			case `ingester-uuid`:
+				var guid uuid.UUID
+				if guid, err = uuid.Parse(val); err != nil {
+					err = fmt.Errorf("invalid ingester-uuid %q - %v", val, err)
+					return
+				}
+				conf.Ingester_UUID = guid.String()
 			case `cleartext-target`:
 				if _, _, err = net.SplitHostPort(val); err != nil {
 					return
+				} else {
+					conf.Cleartext_Backend_Target = append(conf.Cleartext_Backend_Target, val)
 				}
-				conf.Destinations = append(conf.Destinations, `tcp://`+val)
 			case `ciphertext-target`:
 				if _, _, err = net.SplitHostPort(val); err != nil {
 					return
-				}
-				conf.Destinations = append(conf.Destinations, `tls://`+val)
-			case `insecure-novalidate-tls`:
-				if val == `true` {
-					conf.VerifyCert = false
-				} else if val == `false` {
-					//do nothing
 				} else {
-					err = fmt.Errorf("Unknown gravwell insecure-novalidate-tls argument %s", val)
+					conf.Encrypted_Backend_Target = append(conf.Encrypted_Backend_Target, val)
+				}
+			case `insecure-novalidate-tls`:
+				if conf.Insecure_Skip_TLS_Verify, err = strconv.ParseBool(val); err != nil {
+					err = fmt.Errorf("Unknown gravwell insecure-novalidate-tls argument %s - %v", val, err)
 					return
 				}
 			case `tag`:
-				conf.Tags = append(conf.Tags, val)
+				if err = ingest.CheckTag(val); err != nil {
+					err = fmt.Errorf("invalid tag %q - %v", val, err)
+					return
+				}
 				tag = val
 			case `encoding`:
 				if enc, err = getEncoder(val); err != nil {
+					return
+				}
+			case `label`:
+				conf.Label = val
+			case `enable-compression`:
+				if conf.IngestStreamConfig.Enable_Compression, err = strconv.ParseBool(val); err != nil {
+					err = fmt.Errorf("Unknown gravwell enable-compression argument %s - %v", val, err)
 					return
 				}
 			default:
@@ -105,33 +131,53 @@ func parseConfig(c *caddy.Controller) (conf ingest.UniformMuxerConfig, tag strin
 			}
 		}
 	}
-	conf.CacheDepth = 128
-	if conf.CacheSize > 0 && conf.CachePath == "" {
+	if conf.Cache_Depth > 0 && conf.Ingest_Cache_Path == "" {
 		err = fmt.Errorf("Max-Cache-Size-MB may not be set without an active cache location")
 	}
-	if len(conf.Tags) != 1 || tag == `` {
-		err = fmt.Errorf("Tag not appropriately defined.  Exactly one tag must be specified")
+	if tag == `` {
+		tag = defaultTag
 	}
-	if len(conf.Destinations) == 0 {
-		err = fmt.Errorf("Invalid destination count, > 0 destinations must be specified")
+	if len(conf.Cleartext_Backend_Target) == 0 && len(conf.Encrypted_Backend_Target) == 0 {
+		err = fmt.Errorf("Invalid targets, at least one must be specified")
 	}
-	if len(conf.Auth) == 0 {
+	if len(conf.Ingest_Secret) == 0 {
 		err = fmt.Errorf("Invalid Ingest-Auth.  An auth token is required")
 	}
 	if enc == nil {
 		//default to the JSON encoder
 		enc = &jsonEncoder{}
 	}
+	conf.Encoder = enc.Name()
 	return
 }
 
 // setup the plugin
 func setup(c *caddy.Controller) error {
-	conf, tag, enc, err := parseConfig(c)
+	cfg, tag, enc, err := parseConfig(c)
 	if err != nil {
 		return err
 	}
-	im, err := ingest.NewUniformMuxer(conf)
+	conns, err := cfg.Targets()
+	if err != nil {
+		return err
+	}
+
+	icfg := ingest.UniformMuxerConfig{
+		IngestStreamConfig: cfg.IngestStreamConfig,
+		Destinations:       conns,
+		Tags:               []string{tag},
+		Auth:               cfg.Secret(),
+		VerifyCert:         !cfg.InsecureSkipTLSVerification(),
+		IngesterName:       `coredns`,
+		IngesterVersion:    version.GetVersion(),
+		IngesterUUID:       cfg.Ingester_UUID,
+		IngesterLabel:      cfg.Label,
+		CacheDepth:         cfg.Cache_Depth,
+		CachePath:          cfg.Ingest_Cache_Path,
+		CacheSize:          cfg.Max_Ingest_Cache,
+		CacheMode:          cfg.Cache_Mode,
+	}
+	im, err := ingest.NewUniformMuxer(icfg)
 	if err != nil {
 		return err
 	}
@@ -145,8 +191,12 @@ func setup(c *caddy.Controller) error {
 	if err != nil {
 		return err
 	}
+	if err = im.SetRawConfiguration(cfg); err != nil {
+		return err
+	}
+	fmt.Println("set config", cfg)
 
-	cfg := dnsserver.GetConfig(c)
+	dcfg := dnsserver.GetConfig(c)
 	mid := func(next plugin.Handler) plugin.Handler {
 		return gwHandler{
 			Next: next,
@@ -155,7 +205,7 @@ func setup(c *caddy.Controller) error {
 			enc:  enc,
 		}
 	}
-	cfg.AddPlugin(mid)
+	dcfg.AddPlugin(mid)
 	return nil
 }
 
@@ -236,10 +286,6 @@ func (i *introspector) WriteMsg(m *dns.Msg) error {
 func getEncoder(t string) (encoder, error) {
 	t = strings.TrimSpace(strings.ToLower(t))
 	switch t {
-	case `binary`:
-		fallthrough
-	case `native`:
-		return nil, nil
 	case `text`:
 		return &textEncoder{}, nil
 	case `json`:
@@ -272,6 +318,10 @@ func (t textEncoder) EncodeError(ts entry.Timestamp, l, r net.Addr, msg *dns.Msg
 			l.Network(), l.String(), r.String(), q.String())))
 	}
 	return
+}
+
+func (t textEncoder) Name() string {
+	return `text`
 }
 
 type dnsBase struct {
@@ -324,6 +374,10 @@ func (j jsonEncoder) Encode(ts entry.Timestamp, local, remote net.Addr, tr *intr
 		bbs = append(bbs, bb)
 	}
 	return
+}
+
+func (j jsonEncoder) Name() string {
+	return `json`
 }
 
 type errAnswer struct {

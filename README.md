@@ -18,7 +18,7 @@ git clone https://github.com/coredns/coredns.git
 pushd coredns
 sed -i 's/metadata:metadata/metadata:metadata\ngravwell:github.com\/gravwell\/coredns/g' plugin.cfg
 go generate
-go get github.com/traetox/coredns
+go get github.com/gravwell/coredns
 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /tmp/coredns
 popd
 ```
