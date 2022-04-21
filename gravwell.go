@@ -55,12 +55,13 @@ type encoder interface {
 	Name() string
 }
 
-func parseConfig(c *caddy.Controller) (conf cfgType, tag string, enc encoder, err error) {
+func parseConfig(c *caddy.Controller) (conf cfgType, enc encoder, err error) {
 	conf.IngestConfig = config.IngestConfig{
 		Log_Level:                `INFO`,
 		Ingester_Name:            `coredns`,
 		Insecure_Skip_TLS_Verify: false,
 	}
+	conf.Tag = defaultTag
 	for c.Next() {
 		for c.NextBlock() {
 			var arg, val string
@@ -113,7 +114,7 @@ func parseConfig(c *caddy.Controller) (conf cfgType, tag string, enc encoder, er
 					err = fmt.Errorf("invalid tag %q - %v", val, err)
 					return
 				}
-				tag = val
+				conf.Tag = val
 			case `encoding`:
 				if enc, err = getEncoder(val); err != nil {
 					return
@@ -134,8 +135,8 @@ func parseConfig(c *caddy.Controller) (conf cfgType, tag string, enc encoder, er
 	if conf.Cache_Depth > 0 && conf.Ingest_Cache_Path == "" {
 		err = fmt.Errorf("Max-Cache-Size-MB may not be set without an active cache location")
 	}
-	if tag == `` {
-		tag = defaultTag
+	if conf.Tag == `` {
+		conf.Tag = defaultTag
 	}
 	if len(conf.Cleartext_Backend_Target) == 0 && len(conf.Encrypted_Backend_Target) == 0 {
 		err = fmt.Errorf("Invalid targets, at least one must be specified")
@@ -153,7 +154,7 @@ func parseConfig(c *caddy.Controller) (conf cfgType, tag string, enc encoder, er
 
 // setup the plugin
 func setup(c *caddy.Controller) error {
-	cfg, tag, enc, err := parseConfig(c)
+	cfg, enc, err := parseConfig(c)
 	if err != nil {
 		return err
 	}
@@ -165,7 +166,7 @@ func setup(c *caddy.Controller) error {
 	icfg := ingest.UniformMuxerConfig{
 		IngestStreamConfig: cfg.IngestStreamConfig,
 		Destinations:       conns,
-		Tags:               []string{tag},
+		Tags:               []string{cfg.Tag},
 		Auth:               cfg.Secret(),
 		VerifyCert:         !cfg.InsecureSkipTLSVerification(),
 		IngesterName:       `coredns`,
@@ -187,14 +188,13 @@ func setup(c *caddy.Controller) error {
 	if err = im.WaitForHot(time.Second); err != nil {
 		return err
 	}
-	tg, err := im.GetTag(tag)
+	tg, err := im.GetTag(cfg.Tag)
 	if err != nil {
 		return err
 	}
 	if err = im.SetRawConfiguration(cfg); err != nil {
 		return err
 	}
-	fmt.Println("set config", cfg)
 
 	dcfg := dnsserver.GetConfig(c)
 	mid := func(next plugin.Handler) plugin.Handler {
