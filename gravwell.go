@@ -131,7 +131,7 @@ func parseConfig(c *caddy.Controller) (conf cfgType, enc encoder, err error) {
 			}
 		}
 	}
-	if conf.Cache_Depth > 0 && conf.Ingest_Cache_Path == "" {
+	if (conf.Cache_Depth > 0 || conf.Max_Ingest_Cache > 0) && conf.Ingest_Cache_Path == "" {
 		err = fmt.Errorf("Max-Cache-Size-MB may not be set without an active cache location")
 	}
 	if conf.Tag == `` {
