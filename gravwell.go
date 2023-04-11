@@ -44,8 +44,9 @@ func init() {
 
 type cfgType struct {
 	config.IngestConfig
-	Tag     string
-	Encoder string
+	Tag          string
+	Encoder      string
+	WriteTimeout time.Duration
 }
 
 // Callback functionto encode DNS Request/Response
@@ -125,6 +126,11 @@ func parseConfig(c *caddy.Controller) (conf cfgType, enc encoder, err error) {
 					err = fmt.Errorf("Unknown gravwell enable-compression argument %s - %v", val, err)
 					return
 				}
+			case `write-timeout`:
+				if conf.WriteTimeout, err = time.ParseDuration(val); err != nil {
+					err = fmt.Errorf("Invalid write-timeout %s %w", val, err)
+					return
+				}
 			default:
 				err = fmt.Errorf("Unknown gravwell configuration directive %s", arg)
 				return
@@ -202,6 +208,7 @@ func setup(c *caddy.Controller) error {
 			im:   im,
 			tag:  tg,
 			enc:  enc,
+			to:   cfg.WriteTimeout,
 		}
 	}
 	dcfg.AddPlugin(mid)
@@ -213,6 +220,7 @@ type gwHandler struct {
 	im   *ingest.IngestMuxer
 	tag  entry.EntryTag
 	enc  encoder
+	to   time.Duration
 }
 
 func (gh gwHandler) String() string {
@@ -235,7 +243,7 @@ func (gh gwHandler) ServeDNS(ctx context.Context, rw dns.ResponseWriter, r *dns.
 	c, err = gh.Next.ServeDNS(ctx, is, r)
 	if gh.enc == nil {
 		var bb []byte
-		if bb, lerr = r.Pack(); err != nil {
+		if bb, lerr = r.Pack(); lerr != nil {
 			bb = []byte(fmt.Sprintf("ERROR: Failed to pack DNS response: %v", err))
 		}
 		bbs = append(bbs, bb)
@@ -245,8 +253,19 @@ func (gh gwHandler) ServeDNS(ctx context.Context, rw dns.ResponseWriter, r *dns.
 		bbs = gh.enc.Encode(ts, local, remote, is)
 	}
 	for _, bb := range bbs {
-		if lerr = gh.im.Write(ts, gh.tag, bb); lerr != nil {
-			return
+		if gh.to > 0 {
+			ent := entry.Entry{
+				TS:   ts,
+				Tag:  gh.tag,
+				Data: bb,
+			}
+			if lerr = gh.im.WriteEntryTimeout(&ent, gh.to); lerr != nil {
+				return
+			}
+		} else {
+			if lerr = gh.im.Write(ts, gh.tag, bb); lerr != nil {
+				return
+			}
 		}
 	}
 

@@ -10,6 +10,7 @@ package gravwellcoredns
 
 import (
 	"testing"
+	"time"
 
 	"github.com/coredns/caddy"
 )
@@ -112,6 +113,22 @@ const (
 	Log-Level ERROR
 	ingest-cache-path /tmp/dns.cache
 	max-cache-size-mb -1
+	}`
+
+	badWriteTimeoutConfig = `gravwell {
+	Ingest-Secret testing
+	Cleartext-Target 192.168.1.1:4024
+	Tag dns
+	Log-Level ERROR
+	Write-Timeout foobar
+	}`
+
+	goodWriteTimeoutConfig = `gravwell {
+	Ingest-Secret testing
+	Cleartext-Target 192.168.1.1:4024
+	Tag dns
+	Write-Timeout 900ms
+	Log-Level ERROR
 	}`
 )
 
@@ -223,5 +240,17 @@ func TestSetupGravwell(t *testing.T) {
 	c = caddy.NewTestController("dns", badCache2Config)
 	if _, _, err := parseConfig(c); err == nil {
 		t.Fatal("Missed bad cache config")
+	}
+
+	//check timeouts
+	c = caddy.NewTestController("dns", badWriteTimeoutConfig)
+	if _, _, err := parseConfig(c); err == nil {
+		t.Fatal("Missed bad write timeout")
+	}
+	c = caddy.NewTestController("dns", goodWriteTimeoutConfig)
+	if conf, _, err := parseConfig(c); err != nil {
+		t.Fatal(err)
+	} else if conf.WriteTimeout != 900*time.Millisecond {
+		t.Fatalf("Missed write timeout %v != %v", conf.WriteTimeout, 900*time.Millisecond)
 	}
 }
