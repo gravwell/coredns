@@ -8,7 +8,7 @@ DNS Requests and responses can be encoded as text, JSON, or as a packed binary f
 
 Gravwell provides a CoreDNS Kit to work with data ingested by CoreDNS out of the box and provides a number of prebuilt queries, dashboards, and investigation tools. 
 
-![Gravwell CoreDNS Kit](https://github.com/gravwell/coredns/blob/master/coredns_kit.png?raw=true)
+![Gravwell CoreDNS Kit](https://raw.githubusercontent.com/gravwell/coredns/main/coredns_kit.png)
 
 
 ## Building CoreDNS with the Gravwell plugin
