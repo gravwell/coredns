@@ -1,16 +1,16 @@
 module github.com/gravwell/coredns
 
-go 1.23.0
+go 1.24.9
 
-toolchain go1.23.4
+toolchain go1.24.10
 
 require (
 	github.com/coredns/caddy v1.1.2-0.20241029205200-8de985351a98
 	github.com/coredns/coredns v1.12.0
 	github.com/google/uuid v1.6.0
-	github.com/gravwell/gravwell/v3 v3.8.52
+	github.com/gravwell/gravwell/v3 v3.8.73
 	github.com/miekg/dns v1.1.62
-	golang.org/x/net v0.34.0
+	golang.org/x/net v0.46.0
 )
 
 require (
@@ -26,7 +26,7 @@ require (
 	github.com/google/renameio v1.0.1 // indirect
 	github.com/gravwell/gcfg v1.2.9 // indirect
 	github.com/grpc-ecosystem/grpc-opentracing v0.0.0-20180507213350-8e809c8a8645 // indirect
-	github.com/klauspost/compress v1.17.11 // indirect
+	github.com/klauspost/compress v1.18.0 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/onsi/ginkgo/v2 v2.22.2 // indirect
 	github.com/opentracing/opentracing-go v1.2.0 // indirect
@@ -44,14 +44,14 @@ require (
 	go.opentelemetry.io/otel v1.33.0 // indirect
 	go.opentelemetry.io/otel/sdk/metric v1.32.0 // indirect
 	go.uber.org/mock v0.5.0 // indirect
-	golang.org/x/crypto v0.32.0 // indirect
+	golang.org/x/crypto v0.43.0 // indirect
 	golang.org/x/exp v0.0.0-20250106191152-7588d65b2ba8 // indirect
-	golang.org/x/mod v0.22.0 // indirect
-	golang.org/x/sync v0.10.0 // indirect
-	golang.org/x/sys v0.29.0 // indirect
-	golang.org/x/text v0.21.0 // indirect
-	golang.org/x/time v0.9.0 // indirect
-	golang.org/x/tools v0.29.0 // indirect
+	golang.org/x/mod v0.29.0 // indirect
+	golang.org/x/sync v0.17.0 // indirect
+	golang.org/x/sys v0.37.0 // indirect
+	golang.org/x/text v0.30.0 // indirect
+	golang.org/x/time v0.14.0 // indirect
+	golang.org/x/tools v0.38.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20250106144421-5f5ef82da422 // indirect
 	google.golang.org/grpc v1.69.4 // indirect
 	google.golang.org/protobuf v1.36.2 // indirect
